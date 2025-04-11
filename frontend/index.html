@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Traffic Visualisation</title>
+  <style>
+    body { margin: 0; overflow: hidden; }
+    #ipList { position: absolute; top: 10px; left: 10px; background: rgba(255,255,255,0.8); padding: 10px; max-height: 300px; overflow-y: scroll; }
+  </style>
+</head>
+<body>
+  <!-- A div for extra interaction (e.g., real-time list of IPs) -->
+  <div id="ipList">
+    <h3>Recent IPs</h3>
+    <ul id="ipUl"></ul>
+  </div>
+  
+  <!-- Include Three.js from a CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script>
+    // Set up basic Three.js scene
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    // Create a globe (wireframe sphere)
+    const globeGeometry = new THREE.SphereGeometry(5, 32, 32);
+    const globeMaterial = new THREE.MeshBasicMaterial({ color: 0x0077be, wireframe: true });
+    const globe = new THREE.Mesh(globeGeometry, globeMaterial);
+    scene.add(globe);
+
+    // Position camera
+    camera.position.z = 10;
+
+    // Function to convert latitude and longitude to 3D coordinates on the sphere
+    function latLonToVector3(lat, lon, radius) {
+      const phi = (90 - lat) * (Math.PI / 180);
+      const theta = (lon + 180) * (Math.PI / 180);
+      const x = - (radius * Math.sin(phi) * Math.cos(theta));
+      const z = (radius * Math.sin(phi) * Math.sin(theta));
+      const y = (radius * Math.cos(phi));
+      return new THREE.Vector3(x, y, z);
+    }
+
+    // Update the list of recent IP addresses in the sidebar
+    function updateIPList(data) {
+      const ipUl = document.getElementById('ipUl');
+      ipUl.innerHTML = '';
+      // Show the last 5 package IP addresses
+      data.slice(-5).forEach(pkg => {
+        let li = document.createElement('li');
+        li.textContent = pkg["ip address"] || pkg.ip;
+        ipUl.appendChild(li);
+      });
+    }
+
+    // Fetch data from Flask server
+    async function fetchData() {
+      try {
+        const response = await fetch('http://localhost:5000/data');
+        const data = await response.json();
+        updateIPList(data);
+        data.forEach(pkg => {
+          // Parse latitude and longitude from the package
+          const lat = parseFloat(pkg.latitude);
+          const lon = parseFloat(pkg.longitude);
+          const pos = latLonToVector3(lat, lon, 5.1);  // Place points slightly above the globe
+          // Create a small sphere to represent the package location
+          const pointGeometry = new THREE.SphereGeometry(0.1, 8, 8);
+          const pointMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+          const point = new THREE.Mesh(pointGeometry, pointMaterial);
+          point.position.copy(pos);
+          scene.add(point);
+          // Remove the point after 10 seconds to reduce clutter
+          setTimeout(() => { scene.remove(point); }, 10000);
+        });
+      } catch (err) {
+        console.error("Error fetching data:", err);
+      }
+    }
+
+    // Fetch new data every 2 seconds
+    setInterval(fetchData, 2000);
+
+    // Basic animation loop (with slow rotation of the globe)
+    function animate() {
+      requestAnimationFrame(animate);
+      globe.rotation.y += 0.001;
+      renderer.render(scene, camera);
+    }
+    animate();
+  </script>
+</body>
+</html>
